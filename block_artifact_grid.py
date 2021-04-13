@@ -17,18 +17,7 @@ class Block_Artifact_Grid():
     self.accum_col = 33
     self.median_filter_size = 3
 
-  def detect(self):
-    ycbcr_img = rgb2ycbcr(self.image)
-
-    segmented_img = slic(self.image, n_segments=self.segments, sigma=self.sigma)
-
-    if self.color == 'y':
-      chosen_img_layer = ycbcr_img[:, :, 0]
-    elif self.color == 'cb':
-      chosen_img_layer = ycbcr_img[:, :, 1]
-    else:
-      chosen_img_layer = ycbcr_img[:, :, 2]
-
+  def __horizontal_extraction(self, chosen_img_layer):
     padded_img_horz = mirror_pad_image(chosen_img_layer, 0, self.accum_col // 2)
 
     M, N = padded_img_horz.shape
@@ -58,6 +47,85 @@ class Block_Artifact_Grid():
     edge_horz_pad = mirror_pad_image(edge_horz, self.accum_col // 2, 0)
     med_8step_vert = median_filter_8step_vert(edge_horz_pad, self.accum_col)
 
-    self.result_image = med_8step_vert
+    return med_8step_vert    
+
+  def __vertical_extraction(self, chosen_img_layer):
+    padded_img_vert = mirror_pad_image(chosen_img_layer, self.accum_col // 2, 0)
+
+    M, N = padded_img_vert.shape
+
+    differ_vert = np.zeros((M, N))
+    for i in range(M):
+      for j in range(1, N - 1):
+        differ_vert[i, j] = 2 * padded_img_vert[i, j] - padded_img_vert[i, j + 1] - padded_img_vert[i, j - 1]
+
+    differ_vert = np.absolute(differ_vert)
+    differ_vert = median_filter(differ_vert, size=self.median_filter_size)
+
+    for i in range(M):
+      for j in range(1, N - 1):
+        if differ_vert[i, j] > self.differ_treshold:
+          differ_vert[i, j] = self.differ_treshold
+
+    for i in range(M):
+      differ_vert[i, 0] = differ_vert[i, 1]
+      differ_vert[i, N - 1] = differ_vert[i, N - 2]
+
+    summed_vert = sum_fiter_vert(differ_vert, self.accum_col)
+    summed_vert_pad = mirror_pad_image(summed_vert, 0, self.accum_col // 2)
+    med_horz = median_fiter_horz(summed_vert_pad, self.accum_col)
+
+    edge_vert = summed_vert - med_horz
+    edge_vert_pad = mirror_pad_image(edge_vert, 0, self.accum_col // 2)
+    med_8step_horz = median_filter_8step_horz(edge_vert_pad, self.accum_col)
+
+    return med_8step_horz
+  
+  def detect(self):
+    ycbcr_img = rgb2ycbcr(self.image)
+
+    segmented_img = slic(self.image, n_segments=self.segments, sigma=self.sigma)
+
+    if self.color == 'y':
+      chosen_img_layer = ycbcr_img[:, :, 0]
+    elif self.color == 'cb':
+      chosen_img_layer = ycbcr_img[:, :, 1]
+    else:
+      chosen_img_layer = ycbcr_img[:, :, 2]
+
+    #Horizontal
+    extracted_horz_img = self.__horizontal_extraction(chosen_img_layer)
+
+    # Vertical
+    extracted_vert_img = self.__vertical_extraction(chosen_img_layer)
+
+    # BAG
+    bag = extracted_vert_img + extracted_horz_img
+
+    block = block_process(bag)
+
+    normal_block = np.zeros((block.shape))
+
+    for i in range(len(block)):
+      for j in range(len(block[0])):
+        if block[i, j] > np.mean(block):
+          normal_block[i, j] = 1
+
+    label_map = np.zeros((np.size(chosen_img_layer, 0), np.size(chosen_img_layer, 1)))
+
+    for i in range(len(normal_block)):
+      for j in range(len(normal_block[i])):
+        for ii in range(8):
+          for jj in range(8):
+            label_map[ii + (i * 8), jj + (j * 8)] = normal_block[i, j]
+
+    for (i, seg_val) in enumerate(np.unique(segmented_img)):
+      mean_segment = np.mean(label_map[segmented_img == seg_val])
+      if mean_segment < self.min_lbl:
+        label_map[segmented_img == seg_val] = 0
+      else:
+        label_map[segmented_img == seg_val] = 1
+
+    self.result_image = label_map
 
     
