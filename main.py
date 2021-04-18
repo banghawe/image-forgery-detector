@@ -17,13 +17,12 @@ print("--- %s seconds ---" % (time.time() - start_time))
 
 fig = plt.figure()
 ax = fig.add_subplot(1, 2, 1)
-imgplot = plt.imshow(image)
+plt.imshow(image)
 ax.set_title('Before')
 plt.colorbar(ticks=[0.1, 0.3, 0.5, 0.7], orientation='horizontal')
 
 ax = fig.add_subplot(1, 2, 2)
-imgplot = plt.imshow(img_detector.result_image)
-imgplot.set_clim(0.0, 0.7)
+plt.imshow(img_detector.result_image)
 ax.set_title('After')
 plt.colorbar(ticks=[0.1, 0.3, 0.5, 0.7], orientation='horizontal')
 
